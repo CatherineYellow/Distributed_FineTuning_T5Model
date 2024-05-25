@@ -82,4 +82,33 @@ Design and build a generative question answering system. The training data set i
 4. 定义文档组装器和加载微调后的T5模型
 5. 定义Spark管道，包括文档组装器和T5模型
 6. 从内存中读取数据，应用管道进行处理，生成问题的答案
-   
+
+### 环境
+1. 创建一个新的虚拟环境:
+```bash
+python3.10 -m venv myenv
+source myenv/bin/activate
+```
+
+2. 在新的虚拟环境中,安装PyTorch
+
+```bash
+pip install torch
+```
+
+3. 然后,安装 transformers 库的最新稳定版:
+
+```bash
+pip install transformers
+```
+
+4. 接下来,安装其他必要的库,如 pandas、scikit-learn 等:
+
+```bash
+pip install pandas scikit-learn datasets evaluate transformers ray
+pip install -U "ray[data,train,tune,serve]"
+pip install "ray[tune]"
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install sentencepiece
+pip install accelerate -U
+```
