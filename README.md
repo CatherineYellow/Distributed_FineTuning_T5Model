@@ -1,4 +1,4 @@
-# spark_project
+# Spark Project
 ## Q1 Question and answering system
 Design and build a generative question answering system. The training data set is from SQuAD v2 Dataset (also located in the server path /shareddata/data/project2 ).
 (1) Write python code to process data. Use the context and question as input, and the answer as output. Use the official validation set as test set, and split the original training set into training set and validation set (5000 samples for valid set, the rest for train set). Prepare the data according to the requirements of model training (Can refer to the original T5 and Flan-T5 paper for data format). You can use either Pyspark or pure python code.
