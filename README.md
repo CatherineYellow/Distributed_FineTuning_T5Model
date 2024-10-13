@@ -9,100 +9,105 @@ Design and build a generative question answering system. The training data set i
 
 (3) Deploy the finetuned QA model with Spark-NLP, and answer the questions of the test set in a streaming processing manner using Kafka. You can search the spark-nlp model here. Note that the deployed model is not the original Flan-T5- small model.
 ## Solution:
-### (1) 数据预处理
+### (1) Data Preprocessing
 
-1. 参考 [T5](https://arxiv.org/pdf/1910.10683) 文章 SQuAD v2 Dataset 的数据部分，格式为：
+1. Refer to the data section of the [T5](https://arxiv.org/pdf/1910.10683) paper for the SQuAD v2 Dataset format:
 
    **Processed input:** question: {***question***} context: {***context***}
 
-   **Processed target:** *{**answers*** 的 'text' 部分}
+   **Processed target:** *{**answers*** 'text' part}
 
-2. 数据划分：
+2. Data Splitting:
 
-   原始training set中5000个样本为测试集，其余为训练集，使用`train_test_split`划分
+   The original training set contains 5000 samples for the test set, while the rest are for the training set, using `train_test_split` for partitioning.
 
-   原始validation set作为测试集
+   The original validation set is used as the test set.
 
-   把数据集存成parquet文件
+   Save the dataset in Parquet format.
    
-### (2) 微调模型
+### (2) Fine-tuning the Model
 
-**bash script**在`train_qa.sh`里，负责运行python文件
+**Bash script** in `train_qa.sh` is responsible for running the Python file.
 
-**Ray-train python code**在`train_qa.py`里
+**Ray-train Python code** in `train_qa.py`.
 
-代码思路:
+Code Overview:
 
-1. 训练函数定义:定义 `train_func` 函数,该函数封装了以下内容:
+1. Training Function Definition: Define the `train_func` function, which encapsulates the following content:
 
-   * 数据预处理:加载训练和验证数据集(train_df和valid_df),并使用 `Dataset.from_pandas` 将其转换为 Hugging Face 的 `Dataset` 对象。
+   * Data Preprocessing: Load the training and validation datasets (`train_df` and `valid_df`) and convert them into Hugging Face's `Dataset` object using `Dataset.from_pandas`.
 
-   * Tokenization:加载预训练的 Flan-T5-small tokenizer,并定义 `tokenize_function` 对输入和目标进行编码。使用 `Dataset.map` 方法将 `tokenize_function` 应用于训练和验证数据集,生成用于模型训练的 tokenized 数据集。
+   * Tokenization: Load the pre-trained Flan-T5-small tokenizer and define the `tokenize_function` for encoding inputs and targets. Use the `Dataset.map` method to apply the `tokenize_function` to the training and validation datasets to generate tokenized datasets for model training.
 
-   * 模型加载和训练参数设置:加载预训练的 Flan-T5-small 模型,并使用 `TrainingArguments` 类设置训练参数,如输出目录、评估策略、学习率、批量大小、训练轮数等。
+   * Model Loading and Training Parameter Setting: Load the pre-trained Flan-T5-small model and use the `TrainingArguments` class to set training parameters, such as output directory, evaluation strategy, learning rate, batch size, number of training epochs, etc.
 
-   * 定义 `compute_metrics` 函数用于计算评估指标。该函数对预测结果进行解码,并使用 `evaluate` 库中的 `squad_v2` 指标计算评估结果。
+   * Define the `compute_metrics` function to calculate evaluation metrics. This function decodes the prediction results and computes evaluation results using the `squad_v2` metrics from the `evaluate` library.
 
-   * 使用 Hugging Face 的 `Trainer` 类创建训练器对象,传入模型、训练参数、训练和验证数据集以及评估指标计算函数。
+   * Create a trainer object using Hugging Face's `Trainer` class, passing the model, training parameters, training and validation datasets, and the evaluation metrics computation function.
 
-   * 使用 Ray Train 的 `RayTrainReportCallback` 回调函数将指标报告给 Ray Train。 
+   * Use Ray Train's `RayTrainReportCallback` to report metrics to Ray Train.
 
-   * 使用 `ray.train.huggingface.transformers.prepare_trainer` 函数准备 Trainer 对象以适应分布式训练。
-2. 超参数搜索:定义超参数空间 `hyperparameter_space`,包含不同的学习率和批量大小组合。遍历超参数空间,对每组超参数执行以下步骤:
+   * Use the `ray.train.huggingface.transformers.prepare_trainer` function to prepare the Trainer object for distributed training.
 
-   * 使用 Ray Train 的 `TorchTrainer` 类创建分布式训练器对象,传入 `train_func` 函数和 `ScalingConfig` 配置(设置工作节点数为1和不使用 GPU)。
+2. Hyperparameter Search: Define the hyperparameter space `hyperparameter_space`, which includes different combinations of learning rates and batch sizes. Iterate through the hyperparameter space and perform the following steps for each set of hyperparameters:
 
-   * 调用 `TorchTrainer.fit` 方法启动分布式训练,并获取训练结果。
+   * Create a distributed trainer object using Ray Train's `TorchTrainer` class, passing the `train_func` function and the `ScalingConfig` settings (set the number of worker nodes to 1 and not using GPU).
 
-   * 从训练结果中获取验证集上的评估指标(F1 score),并与当前最佳指标进行比较。如果当前指标更好,则更新最佳指标、最佳超参数和最佳检查点路径。
-3. 最佳模型保存和加载:使用 `best_checkpoint_path.as_directory` 方法将最佳检查点保存到本地目录,并使用 `T5ForConditionalGeneration.from_pretrained` 方法从检查点目录加载最佳模型。最后,将最佳模型保存到指定路径。
-4. 结果输出:输出最佳超参数和最佳验证指标。
-### (3) 测试模型
+   * Call the `TorchTrainer.fit` method to start distributed training and obtain training results.
 
-[`HuggingFace_ONNX_in_Spark_NLP_T5.ipynb`](https://colab.research.google.com/github/JohnSnowLabs/spark-nlp/blob/master/examples/python/transformers/onnx/HuggingFace_ONNX_in_Spark_NLP_T5.ipynb#scrollTo=AcVmXaYCWVb7) ：
+   * Retrieve evaluation metrics (F1 score) on the validation set from the training results and compare them with the current best metrics. If the current metrics are better, update the best metrics, best hyperparameters, and best checkpoint path.
 
-将huggingface的model （采用第二问微调后最佳的model）部署为sparknlp的model
+3. Best Model Saving and Loading: Use the `best_checkpoint_path.as_directory` method to save the best checkpoint to the local directory, and load the best model using `T5ForConditionalGeneration.from_pretrained` from the checkpoint directory. Finally, save the best model to the specified path.
 
-`kafka.sh`文件：
+4. Results Output: Output the best hyperparameters and best validation metrics.
 
-1. 启动Zookeeper和Kafka服务
-2. 创建名为"qaaa"的Kafka主题
-3. 运行`kafka_producer.py`脚本，将预处理后的数据发送到Kafka
+### (3) Testing the Model
 
-`kafka_producer.py`文件：
+[`HuggingFace_ONNX_in_Spark_NLP_T5.ipynb`](https://colab.research.google.com/github/JohnSnowLabs/spark-nlp/blob/master/examples/python/transformers/onnx/HuggingFace_ONNX_in_Spark_NLP_T5.ipynb#scrollTo=AcVmXaYCWVb7):
 
-1. 读取预处理后的Parquet格式数据，包含"context"和"question"字段
-2. 创建Kafka生产者，将测试集的每行数据转换为包含"context"和"question"字段的字典，并发送到"qaaa"主题
+Deploy the Hugging Face model (the best model fine-tuned in the second part) as a Spark NLP model.
 
-`project2.ipynb`文件：
+`kafka.sh` file:
 
-1. 配置SparkSession和Kafka相关参数
-2. 从Kafka的"qaaa"主题中读取数据，并解析JSON格式的消息
-3. 将"context"和"question"列合并为一列文本数据，并将预处理后的数据写入内存
-4. 定义文档组装器和加载微调后的T5模型
-5. 定义Spark管道，包括文档组装器和T5模型
-6. 从内存中读取数据，应用管道进行处理，生成问题的答案
+1. Start Zookeeper and Kafka services.
+2. Create a Kafka topic named "qaaa".
+3. Run the `kafka_producer.py` script to send the preprocessed data to Kafka.
+
+`kafka_producer.py` file:
+
+1. Read the preprocessed Parquet format data, which includes the "context" and "question" fields.
+2. Create a Kafka producer that converts each row of the test set into a dictionary containing the "context" and "question" fields, and sends it to the "qaaa" topic.
+
+`project2.ipynb` file:
+
+1. Configure the SparkSession and Kafka-related parameters.
+2. Read data from the "qaaa" topic in Kafka and parse the JSON-formatted messages.
+3. Merge the "context" and "question" columns into a single text data column and write the preprocessed data to memory.
+4. Define the document assembler and load the fine-tuned T5 model.
+5. Define a Spark pipeline that includes the document assembler and T5 model.
+6. Read data from memory, apply the pipeline for processing, and generate answers to the questions.
+
 
 ### 环境
-1. 创建一个新的虚拟环境:
+1. Create a new virtual environment:
 ```bash
 python3.10 -m venv myenv
 source myenv/bin/activate
 ```
 
-2. 在新的虚拟环境中,安装PyTorch
+2. In the new virtual environment, install PyTorch:
 
 ```bash
 pip install torch
 ```
 
-3. 然后,安装 transformers 库的最新稳定版:
+3. Then, install the latest stable version of the transformers library:
 
 ```bash
 pip install transformers
 ```
 
-4. 接下来,安装其他必要的库,如 pandas、scikit-learn 等:
+4. Next, install other necessary libraries, such as pandas, scikit-learn, etc.
 
 ```bash
 pip install pandas scikit-learn datasets evaluate transformers ray
