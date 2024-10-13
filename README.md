@@ -88,7 +88,7 @@ Deploy the Hugging Face model (the best model fine-tuned in the second part) as 
 6. Read data from memory, apply the pipeline for processing, and generate answers to the questions.
 
 
-### 环境
+### Environment
 1. Create a new virtual environment:
 ```bash
 python3.10 -m venv myenv
